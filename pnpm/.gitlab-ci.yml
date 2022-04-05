@@ -1,0 +1,45 @@
+image: node:16
+
+stages:
+  - lint
+  - test
+  - security
+
+lint:
+  stage: lint
+  before_script:
+    - node - add --global pnpm@latest
+    - pnpm config set store-dir .pnpm-store
+  script:
+    - pnpm install --ignore-scripts
+    - pnpm lint
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - .pnpm-store
+
+test:
+  stage: test
+  before_script:
+    - node - add --global pnpm@latest
+    - pnpm config set store-dir .pnpm-store
+  script:
+    - pnpm install --ignore-scripts
+    - pnpm test
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - .pnpm-store
+
+security:
+  stage: security
+  before_script:
+    - node - add --global pnpm@latest
+    - pnpm config set store-dir .pnpm-store
+  script:
+    - pnpm install --ignore-scripts
+    - pnpm audit --audit-level=high
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - .pnpm-store

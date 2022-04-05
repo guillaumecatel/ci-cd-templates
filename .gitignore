@@ -1,0 +1,47 @@
+# ENVIRONMENT
+**/.env
+**/.env.local
+**/.env.*.local
+
+# COMPILED SOURCES
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# PACKAGES
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+*.tgz
+
+# OS GENERATED FILES
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# CODE EDITOR
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.stencil
+
+# RUNTIME
+pids
+*.pid
+*.seed
+*.pid.lock
