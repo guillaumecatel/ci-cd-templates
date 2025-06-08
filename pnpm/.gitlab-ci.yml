@@ -1,45 +1,57 @@
-image: node:16
-
 stages:
-  - lint
   - test
-  - security
+  - docker
 
-lint:
-  stage: lint
-  before_script:
-    - node - add --global pnpm@latest
-    - pnpm config set store-dir .pnpm-store
-  script:
-    - pnpm install --ignore-scripts
-    - pnpm lint
-  cache:
-    key: "$CI_COMMIT_REF_SLUG"
-    paths:
-      - .pnpm-store
+variables:
+  NODE_ENV: development
+  PNPM_HOME: "$CI_PROJECT_DIR/.pnpm"
 
-test:
+before_script:
+  - echo "Using Node.js version from .nvmrc"
+  - export NODE_VERSION=$(cat .nvmrc)
+  - curl -fsSL https://pnpm.io/install.sh | sh -
+  - export PATH="$PNPM_HOME:$PATH"
+  - corepack enable
+  - corepack prepare pnpm@10.0.0 --activate
+  - pnpm install
+
+lint-and-test:
   stage: test
-  before_script:
-    - node - add --global pnpm@latest
-    - pnpm config set store-dir .pnpm-store
+  image: node:latest
+  tags:
+    - docker
   script:
-    - pnpm install --ignore-scripts
-    - pnpm test
-  cache:
-    key: "$CI_COMMIT_REF_SLUG"
-    paths:
-      - .pnpm-store
+    - pnpm lint
+    - pnpm format
+    - pnpm test:unit
+    - pnpm test:e2e
+  only:
+    - branches
+    - merge_requests
+    - tags
 
-security:
-  stage: security
-  before_script:
-    - node - add --global pnpm@latest
-    - pnpm config set store-dir .pnpm-store
+docker-build-on-tag:
+  stage: docker
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_DRIVER: overlay2
   script:
-    - pnpm install --ignore-scripts
-    - pnpm audit --audit-level=high
-  cache:
-    key: "$CI_COMMIT_REF_SLUG"
-    paths:
-      - .pnpm-store
+    - export NODE_VERSION=$(cat .nvmrc)
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    - export IMAGE_NAME="$CI_REGISTRY_IMAGE"
+    - export IMAGE_TAG="${CI_COMMIT_TAG}"
+    - docker buildx create --use
+    - docker buildx build \
+      --push \
+      --build-arg NODE_VERSION="$NODE_VERSION" \
+      --tag "$IMAGE_NAME:$IMAGE_TAG" \
+      --label "org.opencontainers.image.version=$IMAGE_TAG" \
+      --label "org.opencontainers.image.source=$CI_PROJECT_URL" \
+      -f Dockerfile .
+  only:
+    - tags
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+(\.\d+){0,2}$/'
