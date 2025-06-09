@@ -1,57 +1,61 @@
 stages:
   - test
-  - docker
+  - build
+  - deploy
 
 variables:
-  NODE_ENV: development
-  PNPM_HOME: "$CI_PROJECT_DIR/.pnpm"
+  NODE_ENV: production
+  PNPM_HOME: "$CI_PROJECT_DIR/.pnpm-store"
+  PATH: "$PNPM_HOME:$PATH"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
 
 before_script:
-  - echo "Using Node.js version from .nvmrc"
-  - export NODE_VERSION=$(cat .nvmrc)
-  - curl -fsSL https://pnpm.io/install.sh | sh -
-  - export PATH="$PNPM_HOME:$PATH"
+  - node_version=$(cat .nvmrc)
+  - curl -fsSL https://get.pnpm.io/install.sh | bash -
   - corepack enable
   - corepack prepare pnpm@10.0.0 --activate
+  - pnpm env use $node_version
   - pnpm install
 
-lint-and-test:
+lint_and_test:
   stage: test
-  image: node:latest
-  tags:
-    - docker
+  image: node:20
   script:
     - pnpm lint
     - pnpm format
     - pnpm test:unit
     - pnpm test:e2e
-  only:
-    - branches
-    - merge_requests
-    - tags
+    - pnpm build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1h
 
-docker-build-on-tag:
-  stage: docker
-  image: docker:latest
+docker_build_staging:
+  stage: deploy
+  image: docker:24.0.5
   services:
-    - docker:dind
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_DRIVER: overlay2
-  script:
-    - export NODE_VERSION=$(cat .nvmrc)
-    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
-    - export IMAGE_NAME="$CI_REGISTRY_IMAGE"
-    - export IMAGE_TAG="${CI_COMMIT_TAG}"
-    - docker buildx create --use
-    - docker buildx build \
-      --push \
-      --build-arg NODE_VERSION="$NODE_VERSION" \
-      --tag "$IMAGE_NAME:$IMAGE_TAG" \
-      --label "org.opencontainers.image.version=$IMAGE_TAG" \
-      --label "org.opencontainers.image.source=$CI_PROJECT_URL" \
-      -f Dockerfile .
-  only:
-    - tags
+    - docker:24.0.5-dind
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d+(\.\d+){0,2}$/'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - export IMAGE_NAME="$CI_REGISTRY/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}-staging"
+    - export TAG=latest
+    - echo "$PRIVATE_REGISTRY_PASSWORD" | docker login -u "$PRIVATE_REGISTRY_USERNAME" --password-stdin $PRIVATE_REGISTRY_URL
+    - docker build --build-arg NODE_VERSION=$(cat .nvmrc) -t $IMAGE_NAME:$TAG .
+    - docker push $IMAGE_NAME:$TAG
+
+docker_build_production:
+  stage: deploy
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  rules:
+    - if: "$CI_COMMIT_TAG =~ /^v.*/"
+  script:
+    - export IMAGE_NAME="$CI_REGISTRY/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}"
+    - export TAG="${CI_COMMIT_TAG}"
+    - echo "$PRIVATE_REGISTRY_PASSWORD" | docker login -u "$PRIVATE_REGISTRY_USERNAME" --password-stdin $PRIVATE_REGISTRY_URL
+    - docker build --build-arg NODE_VERSION=$(cat .nvmrc) -t $IMAGE_NAME:$TAG .
+    - docker push $IMAGE_NAME:$TAG
